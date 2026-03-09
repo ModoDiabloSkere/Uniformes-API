@@ -1,0 +1,23 @@
+-- =============================================
+-- SEED: Crear usuario admin
+-- =============================================
+-- IMPORTANTE: Primero crea un usuario en Supabase Auth
+-- (Dashboard > Authentication > Users > Add user)
+-- con el email y password que desees.
+--
+-- Luego reemplaza 'TU_USER_ID' con el UUID que Supabase le asignó
+-- y ejecuta este SQL:
+--
+-- insert into app_users (id, email, role, name) values (
+--   'TU_USER_ID',
+--   'admin@tuempresa.com',
+--   'admin',
+--   'Administrador'
+-- );
+--
+-- Ejemplo de como crear usuarios adicionales:
+--
+-- insert into app_users (id, email, role, name) values
+--   ('UUID_VENTAS', 'ventas@tuempresa.com', 'ventas', 'Usuario Ventas'),
+--   ('UUID_ALMACEN', 'almacen@tuempresa.com', 'almacen', 'Usuario Almacen'),
+--   ('UUID_CONFECCION', 'confeccion@tuempresa.com', 'confeccion', 'Usuario Confeccion');

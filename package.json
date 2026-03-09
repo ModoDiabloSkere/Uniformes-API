@@ -1,0 +1,31 @@
+{
+  "name": "uniformes-api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "vercel dev",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ModoDiabloSkere/Uniformes-API.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ModoDiabloSkere/Uniformes-API/issues"
+  },
+  "homepage": "https://github.com/ModoDiabloSkere/Uniformes-API#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.98.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.5",
+    "@vercel/node": "^5.6.11",
+    "typescript": "^5.9.3"
+  }
+}

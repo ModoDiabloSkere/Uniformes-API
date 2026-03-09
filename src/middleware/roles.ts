@@ -1,0 +1,50 @@
+import type { VercelResponse } from '@vercel/node'
+import type { AuthUser, UserRole } from './auth'
+import { error } from '../utils/response'
+
+// Permisos por rol
+const permissions: Record<UserRole, string[]> = {
+  admin: ['*'],
+  ventas: [
+    'clients',
+    'client_contacts',
+    'orders',
+    'order_items',
+    'employees',
+    'measurements',
+  ],
+  almacen: [
+    'materials',
+    'inventory',
+    'suppliers',
+    'purchase_orders',
+    'purchase_order_items',
+  ],
+  confeccion: ['orders:read', 'employees:read', 'measurements:read', 'orders:update_status'],
+}
+
+export function authorize(
+  user: AuthUser,
+  resource: string,
+  res: VercelResponse
+): boolean {
+  const userPerms = permissions[user.role]
+
+  if (userPerms.includes('*')) return true
+  if (userPerms.includes(resource)) return true
+
+  // Verificar permisos parciales (ej: "orders:read")
+  const partial = userPerms.filter((p) => p.startsWith(resource + ':'))
+  if (partial.length > 0) return true
+
+  error(res, 'No tienes permisos para esta accion', 403)
+  return false
+}
+
+export function hasPermission(user: AuthUser, resource: string, action: string): boolean {
+  const userPerms = permissions[user.role]
+  if (userPerms.includes('*')) return true
+  if (userPerms.includes(resource)) return true
+  if (userPerms.includes(`${resource}:${action}`)) return true
+  return false
+}
