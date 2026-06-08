@@ -26,6 +26,9 @@ import { listEntries, createEntry } from '../handlers/inventory/entries'
 // Production pieces
 import { listPieces, generatePieces, updatePieceStatus } from '../handlers/orders/pieces'
 
+// Quotation
+import { generateQuotation } from '../handlers/orders/quotation'
+
 // Suppliers
 import { listSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../handlers/suppliers/suppliers'
 import { listPurchaseOrders, createPurchaseOrder, updatePurchaseOrderStatus } from '../handlers/suppliers/purchaseOrders'
@@ -99,6 +102,9 @@ export function registerRoutes() {
   get('/api/orders/:orderId/pieces', listPieces)
   post('/api/orders/:orderId/pieces/generate', generatePieces)
   patch('/api/pieces/:id/status', updatePieceStatus)
+
+  // Quotation document
+  get('/api/orders/:id/quotation', generateQuotation)
 
   // Suppliers
   get('/api/suppliers', listSuppliers)
