@@ -29,6 +29,10 @@ import { listPieces, generatePieces, updatePieceStatus } from '../handlers/order
 // Quotation
 import { generateQuotation } from '../handlers/orders/quotation'
 
+// Catalog
+import { listCategories, createCategory, updateCategory, deleteCategory } from '../handlers/catalog/categories'
+import { listProducts, createProduct, updateProduct, deleteProduct } from '../handlers/catalog/products'
+
 // Suppliers
 import { listSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../handlers/suppliers/suppliers'
 import { listPurchaseOrders, createPurchaseOrder, updatePurchaseOrderStatus, listOrderPurchaseOrders } from '../handlers/suppliers/purchaseOrders'
@@ -108,6 +112,17 @@ export function registerRoutes() {
 
   // Quotation document
   get('/api/orders/:id/quotation', generateQuotation)
+
+  // Catalog
+  get('/api/product-categories', listCategories)
+  post('/api/product-categories', createCategory)
+  put('/api/product-categories/:id', updateCategory)
+  del('/api/product-categories/:id', deleteCategory)
+
+  get('/api/products', listProducts)
+  post('/api/products', createProduct)
+  put('/api/products/:id', updateProduct)
+  del('/api/products/:id', deleteProduct)
 
   // Suppliers
   get('/api/suppliers', listSuppliers)

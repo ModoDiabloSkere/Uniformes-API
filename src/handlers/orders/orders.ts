@@ -9,6 +9,11 @@ const orderSchema = z.object({
   client_id: z.string().uuid(),
   delivery_date: z.string().optional(),
   notes: z.string().optional(),
+  season: z.string().optional(),
+  delivery_days: z.number().int().positive().optional(),
+  measurements_date: z.string().optional(),
+  apply_iva: z.boolean().optional(),
+  additional_info: z.string().optional(),
 })
 
 const statusSchema = z.object({
@@ -115,10 +120,15 @@ export async function updateOrder(req: VercelRequest, res: VercelResponse) {
   const { data, error: dbErr } = await supabase
     .from('orders')
     .update({
-      ...(body.delivery_date && { delivery_date: body.delivery_date }),
+      ...(body.delivery_date !== undefined && { delivery_date: body.delivery_date || null }),
       ...(body.notes !== undefined && { notes: body.notes }),
       ...(body.advance_payment !== undefined && { advance_payment: body.advance_payment }),
       ...(body.total_price !== undefined && { total_price: body.total_price }),
+      ...(body.season !== undefined && { season: body.season }),
+      ...(body.delivery_days !== undefined && { delivery_days: body.delivery_days }),
+      ...(body.measurements_date !== undefined && { measurements_date: body.measurements_date || null }),
+      ...(body.apply_iva !== undefined && { apply_iva: body.apply_iva }),
+      ...(body.additional_info !== undefined && { additional_info: body.additional_info }),
     })
     .eq('id', id)
     .select()
