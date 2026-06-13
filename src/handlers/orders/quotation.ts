@@ -24,7 +24,11 @@ export async function generateQuotation(req: VercelRequest, res: VercelResponse)
   const templatePath = path.join(process.cwd(), 'templates', 'cotizacion.docx')
 
   if (!fs.existsSync(templatePath)) {
-    return error(res, 'Plantilla cotizacion.docx no encontrada en /templates', 500)
+    return error(
+      res,
+      'Plantilla de cotización no configurada. Ejecuta: npx ts-node scripts/setup-template.ts',
+      503
+    )
   }
 
   const content = fs.readFileSync(templatePath, 'binary')

@@ -4,6 +4,7 @@ import { supabase } from '../../db/supabase'
 import { authenticate } from '../../middleware/auth'
 import { authorize } from '../../middleware/roles'
 import { json, error } from '../../utils/response'
+import { parsePagination } from '../../utils/pagination'
 
 const materialSchema = z.object({
   name: z.string().min(1),
@@ -17,12 +18,16 @@ export async function listMaterials(req: VercelRequest, res: VercelResponse) {
   if (!user) return
   if (!authorize(user, 'materials', res)) return
 
-  const { data, error: dbErr } = await supabase
+  const { limit, offset } = parsePagination(req)
+
+  const { data, count, error: dbErr } = await supabase
     .from('materials')
-    .select('*, inventory(*)')
+    .select('*, inventory(*)', { count: 'exact' })
     .order('name')
+    .range(offset, offset + limit - 1)
 
   if (dbErr) return error(res, dbErr.message, 500)
+  res.setHeader('X-Total-Count', String(count ?? 0))
   return json(res, data)
 }
 

@@ -20,7 +20,7 @@ const measurementSchema = z.object({
 export async function getMeasurements(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'measurements', res)) return
+  if (!authorize(user, 'measurements', res, 'read')) return
 
   const { employeeId } = (req as any).params
   const { data, error: dbErr } = await supabase

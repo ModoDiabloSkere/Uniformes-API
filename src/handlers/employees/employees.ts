@@ -14,7 +14,7 @@ const employeeSchema = z.object({
 export async function listEmployees(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'employees', res)) return
+  if (!authorize(user, 'employees', res, 'read')) return
 
   const { orderId } = (req as any).params
   const { data, error: dbErr } = await supabase
@@ -30,7 +30,7 @@ export async function listEmployees(req: VercelRequest, res: VercelResponse) {
 export async function getEmployee(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'employees', res)) return
+  if (!authorize(user, 'employees', res, 'read')) return
 
   const { id } = (req as any).params
   const { data, error: dbErr } = await supabase

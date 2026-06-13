@@ -4,11 +4,29 @@ import { supabase } from '../../db/supabase'
 import { authenticate } from '../../middleware/auth'
 import { authorize, hasPermission } from '../../middleware/roles'
 import { json, error } from '../../utils/response'
+import { parsePagination } from '../../utils/pagination'
 
 const orderSchema = z.object({
   client_id: z.string().uuid(),
   delivery_date: z.string().optional(),
   notes: z.string().optional(),
+  season: z.string().optional(),
+  delivery_days: z.number().int().positive().optional(),
+  measurements_date: z.string().optional(),
+  apply_iva: z.boolean().optional(),
+  additional_info: z.string().optional(),
+})
+
+const updateOrderSchema = z.object({
+  delivery_date: z.string().nullable().optional(),
+  notes: z.string().optional(),
+  advance_payment: z.number().nonnegative().optional(),
+  total_price: z.number().nonnegative().optional(),
+  season: z.string().optional(),
+  delivery_days: z.number().int().positive().optional(),
+  measurements_date: z.string().nullable().optional(),
+  apply_iva: z.boolean().optional(),
+  additional_info: z.string().optional(),
 })
 
 const statusSchema = z.object({
@@ -27,11 +45,13 @@ const statusSchema = z.object({
 export async function listOrders(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'orders', res)) return
+  if (!authorize(user, 'orders', res, 'read')) return
+
+  const { limit, offset } = parsePagination(req)
 
   let query = supabase
     .from('orders')
-    .select('*, clients(company_name), order_items(*)')
+    .select('*, clients(company_name), order_items(*)', { count: 'exact' })
     .order('created_at', { ascending: false })
 
   // Filtros opcionales
@@ -48,16 +68,17 @@ export async function listOrders(req: VercelRequest, res: VercelResponse) {
   const clientId = req.query.client_id as string
   if (clientId) query = query.eq('client_id', clientId)
 
-  const { data, error: dbErr } = await query
+  const { data, count, error: dbErr } = await query.range(offset, offset + limit - 1)
 
   if (dbErr) return error(res, dbErr.message, 500)
+  res.setHeader('X-Total-Count', String(count ?? 0))
   return json(res, data)
 }
 
 export async function getOrder(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'orders', res)) return
+  if (!authorize(user, 'orders', res, 'read')) return
 
   const { id } = (req as any).params
   const { data, error: dbErr } = await supabase
@@ -110,16 +131,28 @@ export async function updateOrder(req: VercelRequest, res: VercelResponse) {
   if (!authorize(user, 'orders', res)) return
 
   const { id } = (req as any).params
-  const body = req.body || {}
+  const parsed = updateOrderSchema.safeParse(req.body)
+  if (!parsed.success) return error(res, parsed.error.message, 400)
+
+  const d = parsed.data
+  const updates: Record<string, unknown> = {}
+  if (d.delivery_date !== undefined) updates.delivery_date = d.delivery_date ?? null
+  if (d.notes !== undefined) updates.notes = d.notes
+  if (d.advance_payment !== undefined) updates.advance_payment = d.advance_payment
+  if (d.total_price !== undefined) updates.total_price = d.total_price
+  if (d.season !== undefined) updates.season = d.season
+  if (d.delivery_days !== undefined) updates.delivery_days = d.delivery_days
+  if (d.measurements_date !== undefined) updates.measurements_date = d.measurements_date ?? null
+  if (d.apply_iva !== undefined) updates.apply_iva = d.apply_iva
+  if (d.additional_info !== undefined) updates.additional_info = d.additional_info
+
+  if (Object.keys(updates).length === 0) {
+    return error(res, 'No hay campos para actualizar', 400)
+  }
 
   const { data, error: dbErr } = await supabase
     .from('orders')
-    .update({
-      ...(body.delivery_date && { delivery_date: body.delivery_date }),
-      ...(body.notes !== undefined && { notes: body.notes }),
-      ...(body.advance_payment !== undefined && { advance_payment: body.advance_payment }),
-      ...(body.total_price !== undefined && { total_price: body.total_price }),
-    })
+    .update(updates)
     .eq('id', id)
     .select()
     .single()
@@ -141,15 +174,17 @@ export async function updateOrderStatus(req: VercelRequest, res: VercelResponse)
   const parsed = statusSchema.safeParse(req.body)
   if (!parsed.success) return error(res, 'Status o contraseña invalidos', 400)
 
-  // Verificar contraseña re-autenticando al usuario
-  const { error: authErr } = await supabase.auth.signInWithPassword({
+  // Verificar contraseña e invalidar la sesión nueva de inmediato
+  const { data: verifyData, error: authErr } = await supabase.auth.signInWithPassword({
     email: user.email,
     password: parsed.data.password,
   })
 
-  if (authErr) {
+  if (authErr || !verifyData.session) {
     return error(res, 'Contraseña incorrecta', 401)
   }
+
+  await supabase.auth.admin.signOut(verifyData.session.access_token)
 
   const { data, error: dbErr } = await supabase
     .from('orders')

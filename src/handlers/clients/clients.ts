@@ -4,6 +4,7 @@ import { supabase } from '../../db/supabase'
 import { authenticate } from '../../middleware/auth'
 import { authorize } from '../../middleware/roles'
 import { json, error } from '../../utils/response'
+import { parsePagination } from '../../utils/pagination'
 
 const clientSchema = z.object({
   company_name: z.string().min(1),
@@ -18,12 +19,16 @@ export async function listClients(req: VercelRequest, res: VercelResponse) {
   if (!user) return
   if (!authorize(user, 'clients', res)) return
 
-  const { data, error: dbErr } = await supabase
+  const { limit, offset } = parsePagination(req)
+
+  const { data, count, error: dbErr } = await supabase
     .from('clients')
-    .select('*, client_contacts(*)')
+    .select('*, client_contacts(*)', { count: 'exact' })
     .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
 
   if (dbErr) return error(res, dbErr.message, 500)
+  res.setHeader('X-Total-Count', String(count ?? 0))
   return json(res, data)
 }
 

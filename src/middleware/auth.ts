@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { supabase } from '../db/supabase'
 import { error } from '../utils/response'
+import { parseCookies } from '../utils/cookies'
 
 export type UserRole = 'admin' | 'ventas' | 'almacen' | 'confeccion'
 
@@ -18,13 +19,15 @@ export async function authenticate(
   req: VercelRequest,
   res: VercelResponse
 ): Promise<AuthUser | null> {
+  const cookieToken = parseCookies(req.headers.cookie || '')['access_token']
   const header = req.headers.authorization
-  if (!header?.startsWith('Bearer ')) {
+  const headerToken = header?.startsWith('Bearer ') ? header.slice(7) : null
+  const token = cookieToken || headerToken
+
+  if (!token) {
     error(res, 'Token requerido', 401)
     return null
   }
-
-  const token = header.slice(7)
 
   const {
     data: { user },

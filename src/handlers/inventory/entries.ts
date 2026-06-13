@@ -5,28 +5,35 @@ import { authenticate } from '../../middleware/auth'
 import { authorize } from '../../middleware/roles'
 import { json, error } from '../../utils/response'
 
-const entrySchema = z.object({
-  material_id: z.string().uuid(),
-  quantity: z.number().positive(),
-  order_id: z.string().uuid().nullable().optional(),
-  type: z.enum(['entrada', 'salida', 'ajuste']).default('entrada'),
-  notes: z.string().nullable().optional(),
-})
+const entrySchema = z
+  .object({
+    material_id: z.string().uuid(),
+    quantity: z.number().refine((q) => q !== 0, 'La cantidad no puede ser cero'),
+    order_id: z.string().uuid().nullable().optional(),
+    type: z.enum(['entrada', 'salida', 'ajuste']).default('entrada'),
+    notes: z.string().nullable().optional(),
+  })
+  .refine((d) => d.type === 'ajuste' || d.quantity > 0, {
+    message: 'Las entradas y salidas requieren cantidad positiva',
+    path: ['quantity'],
+  })
 
 export async function listEntries(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
   if (!authorize(user, 'inventory', res)) return
 
-  const limit = Math.min(Number(req.query.limit) || 30, 100)
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200)
+  const offset = Math.max(Number(req.query.offset) || 0, 0)
 
-  const { data, error: dbErr } = await supabase
+  const { data, count, error: dbErr } = await supabase
     .from('inventory_entries')
-    .select('*, materials(name, unit), orders(id, clients(company_name))')
+    .select('*, materials(name, unit), orders(id, clients(company_name))', { count: 'exact' })
     .order('created_at', { ascending: false })
-    .limit(limit)
+    .range(offset, offset + limit - 1)
 
   if (dbErr) return error(res, dbErr.message, 500)
+  res.setHeader('X-Total-Count', String(count ?? 0))
   return json(res, data)
 }
 
@@ -64,20 +71,13 @@ export async function createEntry(req: VercelRequest, res: VercelResponse) {
 
   if (entryErr) return error(res, entryErr.message, 500)
 
-  // Actualizar el stock disponible
+  // Actualizar el stock de forma atómica (evita race conditions)
   const delta = type === 'salida' ? -quantity : quantity
 
-  const { data: currentInv } = await supabase
-    .from('inventory')
-    .select('quantity_available')
-    .eq('material_id', material_id)
-    .single()
-
-  const newQty = Math.max(0, (currentInv?.quantity_available || 0) + delta)
-
-  await supabase
-    .from('inventory')
-    .upsert({ material_id, quantity_available: newQty, updated_at: new Date().toISOString() })
+  await supabase.rpc('adjust_inventory_quantity', {
+    p_material_id: material_id,
+    p_delta: delta,
+  })
 
   await supabase.from('activity_log').insert({
     user_id: user.id,

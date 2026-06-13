@@ -12,6 +12,9 @@ const permissions: Record<UserRole, string[]> = {
     'order_items',
     'employees',
     'measurements',
+    'catalog',
+    'landing_contacts',
+    'dashboard',
   ],
   almacen: [
     'materials',
@@ -19,6 +22,8 @@ const permissions: Record<UserRole, string[]> = {
     'suppliers',
     'purchase_orders',
     'purchase_order_items',
+    'catalog',
+    'dashboard',
   ],
   confeccion: ['orders:read', 'employees:read', 'measurements:read', 'orders:update_status'],
 }
@@ -26,16 +31,14 @@ const permissions: Record<UserRole, string[]> = {
 export function authorize(
   user: AuthUser,
   resource: string,
-  res: VercelResponse
+  res: VercelResponse,
+  action: string = 'write'
 ): boolean {
   const userPerms = permissions[user.role]
 
   if (userPerms.includes('*')) return true
   if (userPerms.includes(resource)) return true
-
-  // Verificar permisos parciales (ej: "orders:read")
-  const partial = userPerms.filter((p) => p.startsWith(resource + ':'))
-  if (partial.length > 0) return true
+  if (userPerms.includes(`${resource}:${action}`)) return true
 
   error(res, 'No tienes permisos para esta accion', 403)
   return false

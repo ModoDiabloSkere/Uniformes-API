@@ -110,15 +110,17 @@ export async function updatePieceStatus(req: VercelRequest, res: VercelResponse)
   const parsed = statusSchema.safeParse(req.body)
   if (!parsed.success) return error(res, parsed.error.message, 400)
 
-  // Verificar contraseña re-autenticando al usuario
-  const { error: authErr } = await supabase.auth.signInWithPassword({
+  // Verificar contraseña e invalidar la sesión nueva de inmediato
+  const { data: verifyData, error: authErr } = await supabase.auth.signInWithPassword({
     email: user.email,
     password: parsed.data.password,
   })
 
-  if (authErr) {
+  if (authErr || !verifyData.session) {
     return error(res, 'Contraseña incorrecta', 401)
   }
+
+  await supabase.auth.admin.signOut(verifyData.session.access_token)
 
   const { data, error: dbErr } = await supabase
     .from('production_pieces')

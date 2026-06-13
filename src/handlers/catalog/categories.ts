@@ -4,43 +4,38 @@ import { supabase } from '../../db/supabase'
 import { authenticate } from '../../middleware/auth'
 import { authorize } from '../../middleware/roles'
 import { json, error } from '../../utils/response'
-import { parsePagination } from '../../utils/pagination'
 
-const supplierSchema = z.object({
+const schema = z.object({
   name: z.string().min(1),
-  phone: z.string().optional(),
-  email: z.string().email().optional(),
-  address: z.string().optional(),
+  description: z.string().optional(),
+  sort_order: z.number().int().optional(),
+  active: z.boolean().optional(),
 })
 
-export async function listSuppliers(req: VercelRequest, res: VercelResponse) {
+export async function listCategories(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'suppliers', res)) return
 
-  const { limit, offset } = parsePagination(req)
-
-  const { data, count, error: dbErr } = await supabase
-    .from('suppliers')
-    .select('*', { count: 'exact' })
-    .order('name')
-    .range(offset, offset + limit - 1)
+  const { data, error: dbErr } = await supabase
+    .from('product_categories')
+    .select('*, products(count)')
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
 
   if (dbErr) return error(res, dbErr.message, 500)
-  res.setHeader('X-Total-Count', String(count ?? 0))
   return json(res, data)
 }
 
-export async function createSupplier(req: VercelRequest, res: VercelResponse) {
+export async function createCategory(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'suppliers', res)) return
+  if (!authorize(user, 'catalog', res)) return
 
-  const parsed = supplierSchema.safeParse(req.body)
+  const parsed = schema.safeParse(req.body)
   if (!parsed.success) return error(res, parsed.error.message, 400)
 
   const { data, error: dbErr } = await supabase
-    .from('suppliers')
+    .from('product_categories')
     .insert(parsed.data)
     .select()
     .single()
@@ -49,17 +44,17 @@ export async function createSupplier(req: VercelRequest, res: VercelResponse) {
   return json(res, data, 201)
 }
 
-export async function updateSupplier(req: VercelRequest, res: VercelResponse) {
+export async function updateCategory(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'suppliers', res)) return
+  if (!authorize(user, 'catalog', res)) return
 
   const { id } = (req as any).params
-  const parsed = supplierSchema.partial().safeParse(req.body)
+  const parsed = schema.partial().safeParse(req.body)
   if (!parsed.success) return error(res, parsed.error.message, 400)
 
   const { data, error: dbErr } = await supabase
-    .from('suppliers')
+    .from('product_categories')
     .update(parsed.data)
     .eq('id', id)
     .select()
@@ -69,14 +64,14 @@ export async function updateSupplier(req: VercelRequest, res: VercelResponse) {
   return json(res, data)
 }
 
-export async function deleteSupplier(req: VercelRequest, res: VercelResponse) {
+export async function deleteCategory(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'suppliers', res)) return
+  if (!authorize(user, 'catalog', res)) return
 
   const { id } = (req as any).params
   const { error: dbErr } = await supabase
-    .from('suppliers')
+    .from('product_categories')
     .delete()
     .eq('id', id)
 

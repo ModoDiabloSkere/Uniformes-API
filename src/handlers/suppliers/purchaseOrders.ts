@@ -4,6 +4,7 @@ import { supabase } from '../../db/supabase'
 import { authenticate } from '../../middleware/auth'
 import { authorize } from '../../middleware/roles'
 import { json, error } from '../../utils/response'
+import { parsePagination } from '../../utils/pagination'
 
 const purchaseOrderSchema = z.object({
   supplier_id: z.string().uuid(),
@@ -26,16 +27,19 @@ export async function listPurchaseOrders(req: VercelRequest, res: VercelResponse
   if (!user) return
   if (!authorize(user, 'purchase_orders', res)) return
 
+  const { limit, offset } = parsePagination(req)
+
   let query = supabase
     .from('purchase_orders')
-    .select('*, suppliers(name), purchase_order_items(*, materials(name, unit))')
+    .select('*, suppliers(name), purchase_order_items(*, materials(name, unit))', { count: 'exact' })
     .order('created_at', { ascending: false })
 
   const orderId = req.query.order_id as string
   if (orderId) query = query.eq('order_id', orderId)
 
-  const { data, error: dbErr } = await query
+  const { data, count, error: dbErr } = await query.range(offset, offset + limit - 1)
   if (dbErr) return error(res, dbErr.message, 500)
+  res.setHeader('X-Total-Count', String(count ?? 0))
   return json(res, data)
 }
 
@@ -125,16 +129,10 @@ export async function updatePurchaseOrderStatus(req: VercelRequest, res: VercelR
 
   if (parsed.data.status === 'recibida' && data.purchase_order_items) {
     for (const item of data.purchase_order_items as any[]) {
-      const { data: inv } = await supabase
-        .from('inventory')
-        .select('quantity_available')
-        .eq('material_id', item.material_id)
-        .single()
-
-      const currentQty = inv?.quantity_available || 0
-      await supabase.from('inventory').upsert({
-        material_id: item.material_id,
-        quantity_available: currentQty + item.quantity,
+      // Actualizar stock de forma atómica (evita race conditions)
+      await supabase.rpc('adjust_inventory_quantity', {
+        p_material_id: item.material_id,
+        p_delta: item.quantity,
       })
 
       await supabase.from('inventory_entries').insert({
