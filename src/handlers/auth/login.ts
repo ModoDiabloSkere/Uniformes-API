@@ -36,13 +36,17 @@ export async function login(req: VercelRequest, res: VercelResponse) {
     return error(res, 'Credenciales invalidas', 401)
   }
 
+  if (!userResult.data?.role) {
+    return error(res, 'Usuario no autorizado en el sistema', 403)
+  }
+
   return json(res, {
     token: authResult.data.session.access_token,
     refresh_token: authResult.data.session.refresh_token,
     user: {
       id: authResult.data.user.id,
       email: authResult.data.user.email,
-      role: userResult.data?.role || 'ventas',
+      role: userResult.data.role,
     },
   })
 }

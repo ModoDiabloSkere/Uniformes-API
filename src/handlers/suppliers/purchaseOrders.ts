@@ -125,16 +125,10 @@ export async function updatePurchaseOrderStatus(req: VercelRequest, res: VercelR
 
   if (parsed.data.status === 'recibida' && data.purchase_order_items) {
     for (const item of data.purchase_order_items as any[]) {
-      const { data: inv } = await supabase
-        .from('inventory')
-        .select('quantity_available')
-        .eq('material_id', item.material_id)
-        .single()
-
-      const currentQty = inv?.quantity_available || 0
-      await supabase.from('inventory').upsert({
-        material_id: item.material_id,
-        quantity_available: currentQty + item.quantity,
+      // Actualizar stock de forma atómica (evita race conditions)
+      await supabase.rpc('adjust_inventory_quantity', {
+        p_material_id: item.material_id,
+        p_delta: item.quantity,
       })
 
       await supabase.from('inventory_entries').insert({

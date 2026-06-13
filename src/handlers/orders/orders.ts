@@ -32,7 +32,7 @@ const statusSchema = z.object({
 export async function listOrders(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'orders', res)) return
+  if (!authorize(user, 'orders', res, 'read')) return
 
   let query = supabase
     .from('orders')
@@ -62,7 +62,7 @@ export async function listOrders(req: VercelRequest, res: VercelResponse) {
 export async function getOrder(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)
   if (!user) return
-  if (!authorize(user, 'orders', res)) return
+  if (!authorize(user, 'orders', res, 'read')) return
 
   const { id } = (req as any).params
   const { data, error: dbErr } = await supabase

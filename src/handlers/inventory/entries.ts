@@ -64,20 +64,13 @@ export async function createEntry(req: VercelRequest, res: VercelResponse) {
 
   if (entryErr) return error(res, entryErr.message, 500)
 
-  // Actualizar el stock disponible
+  // Actualizar el stock de forma atómica (evita race conditions)
   const delta = type === 'salida' ? -quantity : quantity
 
-  const { data: currentInv } = await supabase
-    .from('inventory')
-    .select('quantity_available')
-    .eq('material_id', material_id)
-    .single()
-
-  const newQty = Math.max(0, (currentInv?.quantity_available || 0) + delta)
-
-  await supabase
-    .from('inventory')
-    .upsert({ material_id, quantity_available: newQty, updated_at: new Date().toISOString() })
+  await supabase.rpc('adjust_inventory_quantity', {
+    p_material_id: material_id,
+    p_delta: delta,
+  })
 
   await supabase.from('activity_log').insert({
     user_id: user.id,

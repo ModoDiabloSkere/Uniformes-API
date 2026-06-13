@@ -28,7 +28,7 @@ export async function updateLandingContactStatus(req: VercelRequest, res: Vercel
   const user = await authenticate(req, res)
   if (!user) return
 
-  const { id } = req.query
+  const { id } = (req as any).params
   const { status } = req.body
 
   if (!VALID_STATUSES.includes(status)) {
