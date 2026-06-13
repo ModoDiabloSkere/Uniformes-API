@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
 import { supabase, supabaseAnon } from '../../db/supabase'
 import { json, error } from '../../utils/response'
+import { cookieAttrs } from '../../utils/cookies'
 
 const schema = z.object({
   email: z.string().email(),
@@ -50,9 +51,13 @@ export async function login(req: VercelRequest, res: VercelResponse) {
     return error(res, 'Usuario no autorizado en el sistema', 403)
   }
 
+  const session = authResult.data.session
+  res.setHeader('Set-Cookie', [
+    `access_token=${session.access_token}; ${cookieAttrs(3600)}`,
+    `refresh_token=${session.refresh_token}; ${cookieAttrs(604800)}`,
+  ])
+
   return json(res, {
-    token: authResult.data.session.access_token,
-    refresh_token: authResult.data.session.refresh_token,
     user: {
       id: authResult.data.user.id,
       email: authResult.data.user.email,

@@ -2,6 +2,7 @@ import { get, post, put, del, patch } from './router'
 
 // Auth
 import { login } from '../handlers/auth/login'
+import { logout } from '../handlers/auth/logout'
 import { me } from '../handlers/auth/me'
 
 // Clients
@@ -46,6 +47,7 @@ import { getDashboard } from '../handlers/dashboard/dashboard'
 export function registerRoutes() {
   // Auth
   post('/api/auth/login', login)
+  post('/api/auth/logout', logout)
   get('/api/auth/me', me)
 
   // Clients

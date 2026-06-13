@@ -5,13 +5,18 @@ import { authenticate } from '../../middleware/auth'
 import { authorize } from '../../middleware/roles'
 import { json, error } from '../../utils/response'
 
-const entrySchema = z.object({
-  material_id: z.string().uuid(),
-  quantity: z.number().positive(),
-  order_id: z.string().uuid().nullable().optional(),
-  type: z.enum(['entrada', 'salida', 'ajuste']).default('entrada'),
-  notes: z.string().nullable().optional(),
-})
+const entrySchema = z
+  .object({
+    material_id: z.string().uuid(),
+    quantity: z.number().refine((q) => q !== 0, 'La cantidad no puede ser cero'),
+    order_id: z.string().uuid().nullable().optional(),
+    type: z.enum(['entrada', 'salida', 'ajuste']).default('entrada'),
+    notes: z.string().nullable().optional(),
+  })
+  .refine((d) => d.type === 'ajuste' || d.quantity > 0, {
+    message: 'Las entradas y salidas requieren cantidad positiva',
+    path: ['quantity'],
+  })
 
 export async function listEntries(req: VercelRequest, res: VercelResponse) {
   const user = await authenticate(req, res)

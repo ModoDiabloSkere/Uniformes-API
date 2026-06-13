@@ -54,6 +54,7 @@ export async function handleRequest(req: VercelRequest, res: VercelResponse) {
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Vary', 'Origin')
 
   if (req.method === 'OPTIONS') {
