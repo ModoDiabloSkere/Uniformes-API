@@ -41,21 +41,44 @@ export async function updateInventory(req: VercelRequest, res: VercelResponse) {
   const parsed = updateSchema.safeParse(req.body)
   if (!parsed.success) return error(res, parsed.error.message, 400)
 
+  const newQty = parsed.data.quantity_available
+
+  // Leer cantidad actual para calcular delta y registrar la entrada
+  const { data: current } = await supabase
+    .from('inventory')
+    .select('quantity_available')
+    .eq('material_id', materialId)
+    .single()
+
+  const currentQty = Number(current?.quantity_available ?? 0)
+  const delta = newQty - currentQty
+
   const { data, error: dbErr } = await supabase
     .from('inventory')
-    .update({ quantity_available: parsed.data.quantity_available })
+    .update({ quantity_available: newQty })
     .eq('material_id', materialId)
     .select()
     .single()
 
   if (dbErr) return error(res, dbErr.message, 500)
 
+  // Registrar el movimiento en el historial solo si hubo cambio
+  if (delta !== 0) {
+    await supabase.from('inventory_entries').insert({
+      material_id: materialId,
+      quantity: Math.abs(delta),
+      type: delta > 0 ? 'ajuste' : 'salida',
+      notes: 'Ajuste manual de inventario',
+      created_by: user.id,
+    })
+  }
+
   await supabase.from('activity_log').insert({
     user_id: user.id,
     action: 'update',
     entity: 'inventory',
     entity_id: materialId,
-    details: `Inventario actualizado a ${parsed.data.quantity_available}`,
+    details: `Inventario ajustado de ${currentQty} a ${newQty}`,
   })
 
   return json(res, data)

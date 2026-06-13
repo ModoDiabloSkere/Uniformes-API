@@ -4,6 +4,7 @@ import { supabase } from '../../db/supabase'
 import { authenticate } from '../../middleware/auth'
 import { authorize, hasPermission } from '../../middleware/roles'
 import { json, error } from '../../utils/response'
+import { parsePagination } from '../../utils/pagination'
 
 const orderSchema = z.object({
   client_id: z.string().uuid(),
@@ -46,9 +47,11 @@ export async function listOrders(req: VercelRequest, res: VercelResponse) {
   if (!user) return
   if (!authorize(user, 'orders', res, 'read')) return
 
+  const { limit, offset } = parsePagination(req)
+
   let query = supabase
     .from('orders')
-    .select('*, clients(company_name), order_items(*)')
+    .select('*, clients(company_name), order_items(*)', { count: 'exact' })
     .order('created_at', { ascending: false })
 
   // Filtros opcionales
@@ -65,9 +68,10 @@ export async function listOrders(req: VercelRequest, res: VercelResponse) {
   const clientId = req.query.client_id as string
   if (clientId) query = query.eq('client_id', clientId)
 
-  const { data, error: dbErr } = await query
+  const { data, count, error: dbErr } = await query.range(offset, offset + limit - 1)
 
   if (dbErr) return error(res, dbErr.message, 500)
+  res.setHeader('X-Total-Count', String(count ?? 0))
   return json(res, data)
 }
 
@@ -170,15 +174,17 @@ export async function updateOrderStatus(req: VercelRequest, res: VercelResponse)
   const parsed = statusSchema.safeParse(req.body)
   if (!parsed.success) return error(res, 'Status o contraseña invalidos', 400)
 
-  // Verificar contraseña re-autenticando al usuario
-  const { error: authErr } = await supabase.auth.signInWithPassword({
+  // Verificar contraseña e invalidar la sesión nueva de inmediato
+  const { data: verifyData, error: authErr } = await supabase.auth.signInWithPassword({
     email: user.email,
     password: parsed.data.password,
   })
 
-  if (authErr) {
+  if (authErr || !verifyData.session) {
     return error(res, 'Contraseña incorrecta', 401)
   }
+
+  await supabase.auth.admin.signOut(verifyData.session.access_token)
 
   const { data, error: dbErr } = await supabase
     .from('orders')

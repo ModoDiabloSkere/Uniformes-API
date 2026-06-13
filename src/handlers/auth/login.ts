@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
-import { supabase } from '../../db/supabase'
+import { supabase, supabaseAnon } from '../../db/supabase'
 import { json, error } from '../../utils/response'
 
 const schema = z.object({
@@ -33,13 +32,8 @@ export async function login(req: VercelRequest, res: VercelResponse) {
     return error(res, 'Demasiados intentos fallidos. Intenta de nuevo en 15 minutos.', 429)
   }
 
-  const client = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_ANON_KEY!
-  )
-
   const [authResult, userResult] = await Promise.all([
-    client.auth.signInWithPassword({ email, password: parsed.data.password }),
+    supabaseAnon.auth.signInWithPassword({ email, password: parsed.data.password }),
     supabase.from('app_users').select('role').eq('email', email).single(),
   ])
 

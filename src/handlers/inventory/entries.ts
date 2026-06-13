@@ -18,15 +18,17 @@ export async function listEntries(req: VercelRequest, res: VercelResponse) {
   if (!user) return
   if (!authorize(user, 'inventory', res)) return
 
-  const limit = Math.min(Number(req.query.limit) || 30, 100)
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200)
+  const offset = Math.max(Number(req.query.offset) || 0, 0)
 
-  const { data, error: dbErr } = await supabase
+  const { data, count, error: dbErr } = await supabase
     .from('inventory_entries')
-    .select('*, materials(name, unit), orders(id, clients(company_name))')
+    .select('*, materials(name, unit), orders(id, clients(company_name))', { count: 'exact' })
     .order('created_at', { ascending: false })
-    .limit(limit)
+    .range(offset, offset + limit - 1)
 
   if (dbErr) return error(res, dbErr.message, 500)
+  res.setHeader('X-Total-Count', String(count ?? 0))
   return json(res, data)
 }
 
