@@ -17,31 +17,35 @@ function escXml(s: string | number | null | undefined): string {
     .replace(/"/g, '&quot;')
 }
 
-// Replace the nth <si>…</si> block (0-indexed) in sharedStrings XML
-function replaceSi(ssXml: string, targetIdx: number, newText: string): string {
-  let count = 0
-  return ssXml.replace(/<si>[\s\S]*?<\/si>/g, (match) => {
-    if (count === targetIdx) {
-      count++
-      return `<si><t xml:space="preserve">${escXml(newText)}</t></si>`
-    }
-    count++
-    return match
-  })
+// Split-based approach: more reliable than global-regex counting.
+// After split('</si>'), each element contains one <si>…<t>…</t> block (no closing tag).
+// We find the last <si> in that element and overwrite from there to the end.
+function replaceSharedString(ssXml: string, index: number, newText: string): string {
+  const parts = ssXml.split('</si>')
+  if (index >= parts.length - 1) return ssXml
+  const siPos = parts[index].lastIndexOf('<si>')
+  if (siPos === -1) return ssXml
+  parts[index] =
+    parts[index].substring(0, siPos) +
+    `<si><t xml:space="preserve">${escXml(newText)}</t>`
+  return parts.join('</si>')
 }
 
-function countSi(ssXml: string): number {
-  return (ssXml.match(/<\/si>/g) || []).length
+function countSharedStrings(ssXml: string): number {
+  return ssXml.split('</si>').length - 1
 }
 
-function addSharedStrings(ssXml: string, newStrings: string[]): { xml: string; startIdx: number } {
-  const startIdx = countSi(ssXml)
-  const newSi = newStrings.map((s) => `<si><t xml:space="preserve">${escXml(s)}</t></si>`).join('')
+function appendSharedStrings(ssXml: string, newStrings: string[]): { xml: string; startIdx: number } {
+  const startIdx = countSharedStrings(ssXml)
+  if (newStrings.length === 0) return { xml: ssXml, startIdx }
+  const parts = ssXml.split('</si>')
+  const newParts = newStrings.map((s) => `<si><t xml:space="preserve">${escXml(s)}</t>`)
+  // Insert before the last element (which is the content after the final </si>, i.e. '</sst>')
+  parts.splice(parts.length - 1, 0, ...newParts)
   const total = startIdx + newStrings.length
-  let xml = ssXml
-    .replace('</sst>', newSi + '</sst>')
-    .replace(/count="\d+"/, `count="${total}"`)
-    .replace(/uniqueCount="\d+"/, `uniqueCount="${total}"`)
+  let xml = parts.join('</si>')
+  xml = xml.replace(/count="\d+"/, `count="${total}"`)
+  xml = xml.replace(/uniqueCount="\d+"/, `uniqueCount="${total}"`)
   return { xml, startIdx }
 }
 
@@ -105,7 +109,7 @@ export async function generateClientPurchaseOrder(req: VercelRequest, res: Verce
   const { data: order, error: dbErr } = await supabase
     .from('orders')
     .select(
-      '*, clients(*, client_contacts(*)), order_items(*, fabric:fabric_id(name, code), model:model_id(number, season, season_year))',
+      '*, clients(*, client_contacts(*)), order_items(*, fabric:fabric_id(name, code, color), model:model_id(number, season, season_year))',
     )
     .eq('id', id)
     .single()
@@ -114,60 +118,59 @@ export async function generateClientPurchaseOrder(req: VercelRequest, res: Verce
 
   const templatePath = path.join(process.cwd(), 'templates', 'plantilla_ordenCompra.xlsx')
   if (!fs.existsSync(templatePath)) {
-    return error(res, 'Plantilla de orden de compra no encontrada en templates/plantilla_ordenCompra.xlsx', 503)
+    return error(res, 'Plantilla no encontrada: templates/plantilla_ordenCompra.xlsx', 503)
   }
 
   const zip = new PizZip(fs.readFileSync(templatePath))
-  let ssXml = zip.file('xl/sharedStrings.xml')!.asText()
+  let ssXml   = zip.file('xl/sharedStrings.xml')!.asText()
   let sheetXml = zip.file('xl/worksheets/sheet1.xml')!.asText()
 
   // ── Data preparation ──────────────────────────────────────────────────────
 
-  const client = order.clients || {}
-  const contacts: any[] = client.client_contacts || []
-  const contact = contacts[0] || {}
-  const items: any[] = (order.order_items || []).slice(0, 10)
+  const client: any  = order.clients || {}
+  const contacts: any[] = Array.isArray(client.client_contacts) ? client.client_contacts : []
+  const contact: any = contacts[0] || {}
+  const items: any[] = Array.isArray(order.order_items) ? (order.order_items as any[]).slice(0, 10) : []
 
-  const up = (s: string) => (s || '').toUpperCase().trim()
+  const up = (s: unknown) => String(s ?? '').toUpperCase().trim()
 
-  const fmtDate = (iso: string) =>
-    new Date(iso + (iso.length === 10 ? 'T12:00:00' : ''))
-      .toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })
-      .toUpperCase()
+  const fmtDate = (iso: string) => {
+    const d = new Date(iso.length === 10 ? `${iso}T12:00:00` : iso)
+    return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase()
+  }
 
   const SEASON_LABELS: Record<string, string> = { OI: 'OTOÑO/INVIERNO', PV: 'PRIMAVERA/VERANO' }
-  const seasonLabel = SEASON_LABELS[order.season] ?? up(order.season || 'TEMPORADA')
-  const dateStr     = fmtDate(order.created_at)
+  const seasonLabel = SEASON_LABELS[order.season as string] ?? up(order.season || 'TEMPORADA')
+  const dateStr     = order.created_at ? fmtDate(order.created_at as string) : ''
   const companyName = up(client.company_name)
   const contactName = up(contact.name)
   const contactPos  = up(contact.position)
   const address     = up(client.address)
-  const phone       = (contact.phone || '').trim()
-  const email       = (contact.email || '').toLowerCase().trim()
+  const phone       = String(contact.phone ?? '').trim()
+  const email       = String(contact.email ?? '').toLowerCase().trim()
 
-  // Additional info: up to 3 lines
-  const infoLines = (order.additional_info || '').split('\n').map((l: string) => up(l))
+  const infoLines = String(order.additional_info ?? '').split('\n').map((l: string) => up(l))
   while (infoLines.length < 3) infoLines.push('')
 
-  // Delivery info strings for the bottom section
-  const deliveryStr = order.delivery_days ? `${order.delivery_days} DÍAS HÁBILES` : ''
-  const measDateStr = order.measurements_date ? fmtDate(order.measurements_date) : ''
+  console.log('[PO] order id:', id)
+  console.log('[PO] client:', companyName, '| contact:', contactName, '| season:', seasonLabel)
+  console.log('[PO] items:', items.length)
 
-  // ── Replace existing shared strings ───────────────────────────────────────
+  // ── Replace shared strings ────────────────────────────────────────────────
   //
-  // Index → cell(s) → data
-  //  19   → F1      → season label
-  //  20   → B8      → company name
-  //  21   → B9      → contact name
-  //  22   → B10     → contact position
-  //  23   → B11     → address
-  //  27   → G10     → phone
-  //  29   → G11     → email
-  //  30   → G8      → date
-  //  31   → G9      → city (hardcoded)
-  //  41   → A25     → additional info line 2
-  //  43   → A26     → additional info line 3
-  //  44   → A24     → additional info line 1
+  // Index → cell → data
+  //  19   → E5   → temporada
+  //  20   → B8   → empresa
+  //  21   → B9   → contacto (nombre)
+  //  22   → B10  → puesto
+  //  23   → B11  → dirección
+  //  27   → G10  → teléfono
+  //  29   → G11  → email
+  //  30   → G8   → fecha
+  //  31   → G9   → ciudad
+  //  41   → A25  → info adicional línea 2
+  //  43   → A26  → info adicional línea 3
+  //  44   → A24  → info adicional línea 1
 
   const staticReplacements: [number, string][] = [
     [19, seasonLabel],
@@ -184,26 +187,32 @@ export async function generateClientPurchaseOrder(req: VercelRequest, res: Verce
     [44, infoLines[0]],
   ]
 
+  const totalBefore = countSharedStrings(ssXml)
+  console.log('[PO] shared strings in template:', totalBefore)
+
   for (const [idx, val] of staticReplacements) {
-    ssXml = replaceSi(ssXml, idx, val)
+    ssXml = replaceSharedString(ssXml, idx, val)
   }
+
+  console.log('[PO] shared strings after static replacements:', countSharedStrings(ssXml))
 
   // ── Add new shared strings for item rows ──────────────────────────────────
 
   const newStrings: string[] = []
   for (const item of items) {
-    const pieceParts = [item.piece_type || item.uniform_type || '']
-    if (item.fabric) pieceParts.push(item.fabric.name)
-    newStrings.push(up(pieceParts.filter(Boolean).join(' · ')))
+    const pieceLabel = up(item.uniform_type || item.piece_type || '')
+    const fabricPart = item.fabric ? up(item.fabric.name) : ''
+    newStrings.push(fabricPart ? `${pieceLabel} · ${fabricPart}` : pieceLabel)
 
     const modelRef = item.model
-      ? `MOD. #${item.model.number} ${item.model.season}${item.model.season_year}`
-      : (item.item_notes || '')
-    newStrings.push(up(modelRef))
+      ? `MOD. #${item.model.number} ${item.model.season ?? ''}${item.model.season_year ?? ''}`
+      : up(item.item_notes || '')
+    newStrings.push(modelRef)
   }
 
-  const { xml: ss2, startIdx } = addSharedStrings(ssXml, newStrings)
+  const { xml: ss2, startIdx } = appendSharedStrings(ssXml, newStrings)
   ssXml = ss2
+  console.log('[PO] shared strings after item additions:', countSharedStrings(ssXml), '| startIdx:', startIdx)
 
   // ── Build item rows 14-23 ─────────────────────────────────────────────────
 
@@ -214,54 +223,53 @@ export async function generateClientPurchaseOrder(req: VercelRequest, res: Verce
     if (item) {
       const pieceIdx = startIdx + i * 2
       const modelIdx = startIdx + i * 2 + 1
-      newItemRows += itemRow(rowNum, item.quantity, pieceIdx, modelIdx, Number(item.price_per_unit), i === 0)
+      newItemRows += itemRow(rowNum, Number(item.quantity), pieceIdx, modelIdx, Number(item.price_per_unit), i === 0)
     } else {
       newItemRows += emptyRow(rowNum, i === 0)
     }
   }
 
-  // Replace everything from row 14 up to (not including) row 24
-  const startMarker = sheetXml.indexOf('<row r="14"')
-  const endMarker   = sheetXml.indexOf('<row r="24"')
-  if (startMarker !== -1 && endMarker !== -1) {
-    sheetXml = sheetXml.substring(0, startMarker) + newItemRows + sheetXml.substring(endMarker)
+  // Replace rows 14–23 block
+  const r14Start = sheetXml.indexOf('<row r="14"')
+  const r24Start = sheetXml.indexOf('<row r="24"')
+  console.log('[PO] row14 pos:', r14Start, '| row24 pos:', r24Start)
+
+  if (r14Start !== -1 && r24Start !== -1) {
+    sheetXml = sheetXml.substring(0, r14Start) + newItemRows + sheetXml.substring(r24Start)
   }
 
   // ── Financial values ──────────────────────────────────────────────────────
 
-  const subtotal = items.reduce((s: number, i: any) => s + i.quantity * Number(i.price_per_unit), 0)
+  const subtotal = items.reduce((s: number, i: any) => s + Number(i.quantity) * Number(i.price_per_unit), 0)
   const applyIva = order.apply_iva !== false
   const iva      = applyIva ? subtotal * 0.16 : 0
   const total    = subtotal + iva
   const anticipo = total * 0.5
-  const retIsr   = (total / 1.16) * 0.0125
-  const deposito = total - retIsr
 
-  // Add ANTICIPO formula + cached value to I27 (currently empty)
+  // I27 is empty in the template — add ANTICIPO (50% of total)
   sheetXml = sheetXml.replace(
     '<c r="I27" s="25"/>',
     `<c r="I27" s="25"><f>+I26*0.5</f><v>${anticipo}</v></c>`,
   )
 
-  // If no IVA, override the IVA formula
   if (!applyIva) {
+    // Replace IVA formula with 0
     sheetXml = sheetXml.replace(
-      /<c r="I25"[^>]*>.*?<\/c>/s,
+      /<c r="I25"[^>]*>[\s\S]*?<\/c>/,
       `<c r="I25" s="23"><f>0</f><v>0</v></c>`,
     )
   }
 
-  // ── Delivery info: inject into the bottom label cells ────────────────────
-  // F34 has label "TIEMPO DE ENTREGA:", G34 is the value cell (currently empty)
-  // B35 has label "FECHA TOMA DE MEDIDAS:", C35 is the value cell
-  // We'll add these as inline strings if they exist
-  if (deliveryStr) {
-    // Add as shared string
-    const { xml: ss3, startIdx: di } = addSharedStrings(ssXml, [deliveryStr])
+  // ── Delivery info ─────────────────────────────────────────────────────────
+
+  if (order.delivery_days) {
+    const deliveryStr = `${order.delivery_days} DÍAS HÁBILES`
+    const { xml: ss3, startIdx: di } = appendSharedStrings(ssXml, [deliveryStr])
     ssXml = ss3
+    // G34 is the delivery value cell (label is in A35, not F34 based on template)
     sheetXml = sheetXml.replace(
       /(<row r="34"[^>]*>)([\s\S]*?)(<\/row>)/,
-      (m, open, inner, close) => {
+      (_m, open, inner, close) => {
         if (!inner.includes('r="G34"')) {
           inner += `<c r="G34" s="0" t="s"><v>${di}</v></c>`
         }
@@ -276,8 +284,10 @@ export async function generateClientPurchaseOrder(req: VercelRequest, res: Verce
   zip.file('xl/worksheets/sheet1.xml', sheetXml)
 
   const buffer = zip.generate({ type: 'nodebuffer' })
-  const safeName = (client.company_name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20)
+  const safeName = String(client.company_name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20)
   const filename = `OrdenCompra-${safeName}-${new Date().toISOString().slice(0, 10)}.xlsx`
+
+  console.log('[PO] generated buffer size:', buffer.length)
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
