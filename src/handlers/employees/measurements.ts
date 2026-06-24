@@ -15,6 +15,12 @@ const measurementSchema = z.object({
   neck: z.number().optional(),
   inseam: z.number().optional(),
   notes: z.string().optional(),
+  chaleco_talla: z.number().optional(),
+  chaleco_notas: z.string().optional(),
+  blusa_talla: z.number().optional(),
+  blusa_notas: z.string().optional(),
+  pantalon_talla: z.number().optional(),
+  pantalon_notas: z.string().optional(),
 })
 
 export async function getMeasurements(req: VercelRequest, res: VercelResponse) {
