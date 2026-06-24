@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { authenticate } from '../../middleware/auth'
 import { authorize } from '../../middleware/roles'
 import { error } from '../../utils/response'
+import { supabase } from '../../db/supabase'
 
 const itemSchema = z.object({
   cantidad: z.number().int().positive(),
@@ -15,6 +16,7 @@ const itemSchema = z.object({
 })
 
 const quoteSchema = z.object({
+  client_id: z.string().uuid().optional(),
   cliente_nombre: z.string().min(1),
   temporada_label: z.string().min(1),
   fecha: z.string().optional(),
@@ -36,7 +38,7 @@ export async function generateStandaloneQuotation(req: VercelRequest, res: Verce
   const parsed = quoteSchema.safeParse(req.body)
   if (!parsed.success) return error(res, parsed.error.message, 400)
 
-  const { cliente_nombre, temporada_label, fecha, items } = parsed.data
+  const { client_id, cliente_nombre, temporada_label, fecha, items } = parsed.data
 
   const templatePath = path.join(process.cwd(), 'templates', 'cotizacion.docx')
   if (!fs.existsSync(templatePath)) {
@@ -48,6 +50,7 @@ export async function generateStandaloneQuotation(req: VercelRequest, res: Verce
   const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true })
 
   const fechaStr = fecha ? fmtDate(fecha) : fmtDate(new Date().toISOString().slice(0, 10))
+  const total = items.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0)
 
   const enrichedItems = items.map((item) => ({
     cantidad: String(item.cantidad),
@@ -56,21 +59,24 @@ export async function generateStandaloneQuotation(req: VercelRequest, res: Verce
     subtotal: fmt(item.cantidad * item.precio_unitario),
   }))
 
-  const total = items.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0)
-
-  doc.setData({
-    fecha: fechaStr,
-    cliente_nombre,
-    temporada_label,
-    items: enrichedItems,
-    total: fmt(total),
-  })
+  doc.setData({ fecha: fechaStr, cliente_nombre, temporada_label, items: enrichedItems, total: fmt(total) })
 
   try {
     doc.render()
   } catch (renderErr: any) {
     const msg = renderErr?.properties?.errors?.map((e: any) => e.message).join(', ')
     return error(res, `Error al procesar la plantilla: ${msg || renderErr.message}`, 500)
+  }
+
+  // Persist to DB if a client is linked
+  if (client_id) {
+    await supabase.from('quotations').insert({
+      client_id,
+      temporada_label,
+      fecha: fecha || new Date().toISOString().slice(0, 10),
+      items,
+      total,
+    })
   }
 
   const buf = doc.getZip().generate({ type: 'nodebuffer' })
@@ -81,4 +87,22 @@ export async function generateStandaloneQuotation(req: VercelRequest, res: Verce
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
   res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition')
   return res.status(200).send(buf)
+}
+
+export async function listQuotations(req: VercelRequest, res: VercelResponse) {
+  const user = await authenticate(req, res)
+  if (!user) return
+  if (!authorize(user, 'orders', res, 'read')) return
+
+  const { client_id } = req.query as Record<string, string>
+  let query = supabase
+    .from('quotations')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (client_id) query = query.eq('client_id', client_id)
+
+  const { data, error: dbErr } = await query
+  if (dbErr) return res.status(500).json({ error: dbErr.message })
+  return res.status(200).json(data)
 }
