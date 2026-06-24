@@ -97,7 +97,7 @@ export async function listQuotations(req: VercelRequest, res: VercelResponse) {
   const { client_id } = req.query as Record<string, string>
   let query = supabase
     .from('quotations')
-    .select('*')
+    .select('*, clients(company_name)')
     .order('created_at', { ascending: false })
 
   if (client_id) query = query.eq('client_id', client_id)
