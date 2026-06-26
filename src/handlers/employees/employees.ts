@@ -7,6 +7,7 @@ import { json, error, serverError } from '../../utils/response'
 
 const employeeSchema = z.object({
   name: z.string().min(1),
+  folio: z.string().optional(),
   department: z.string().optional(),
   position: z.string().optional(),
 })
